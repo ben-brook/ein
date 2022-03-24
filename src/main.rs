@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::io;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Color {
     Red,
     Green,
@@ -27,7 +27,7 @@ impl fmt::Display for Color {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Action {
     Draw2,
     Reverse,
@@ -40,32 +40,16 @@ enum WildAction {
     Draw4,
 }
 
-trait ColoredCard {
-    fn get_color(&self) -> Color;
-}
-
 #[derive(Debug)]
 struct NumberCard {
     color: Color,
     number: u8,
 }
 
-impl ColoredCard for NumberCard {
-    fn get_color(&self) -> Color {
-        self.color
-    }
-}
-
 #[derive(Debug)]
 struct ActionCard {
     color: Color,
     action: Action,
-}
-
-impl ColoredCard for ActionCard {
-    fn get_color(&self) -> Color {
-        self.color
-    }
 }
 
 #[derive(Debug)]
@@ -78,6 +62,38 @@ enum Card {
     Number(NumberCard),
     Action(ActionCard),
     Wild(WildCard),
+}
+
+impl Card {
+    fn accepts(&self, other: &Card) -> bool {
+        match self {
+            Card::Number(NumberCard { color, number }) => match other {
+                Card::Number(NumberCard {
+                    color: other_color,
+                    number: other_number,
+                }) => other_color == color || other_number == number,
+                Card::Action(ActionCard {
+                    color: other_color,
+                    action: _,
+                }) => other_color == color,
+                Card::Wild(_) => true,
+            },
+
+            Card::Action(ActionCard { color, action }) => match other {
+                Card::Number(NumberCard {
+                    color: other_color,
+                    number: _,
+                }) => other_color == color,
+                Card::Action(ActionCard {
+                    color: other_color,
+                    action: other_action,
+                }) => other_color == color || other_action == action,
+                Card::Wild(_) => true,
+            },
+
+            Card::Wild(_) => true,
+        }
+    }
 }
 
 impl fmt::Display for Card {
@@ -180,8 +196,32 @@ fn init_players(bot_count: u8, global_deck: &mut VecDeque<Card>) -> Vec<Player> 
     players
 }
 
+fn get_deck_display(deck: &Vec<Card>) -> String {
+    let mut deck_display = String::new();
+
+    for (i, card) in deck.iter().enumerate() {
+        deck_display.push_str(&format!(
+            "[{}] {card}{}",
+            i + 1,
+            if i == deck.len() - 2 {
+                ", and "
+            } else if i == deck.len() - 1 {
+                "."
+            } else {
+                ", "
+            }
+        ));
+    }
+
+    deck_display
+        .trim_end_matches(|x| x == ' ' || x == ',')
+        .to_string()
+}
+
 fn main() {
     let mut global_deck = gen_global_deck();
+    let mut discarded = Vec::new();
+    transfer_cards(&mut global_deck, &mut discarded, 1);
 
     println!("Enter bot count:");
     let mut buf = String::new();
@@ -199,12 +239,39 @@ fn main() {
         buf.clear();
     };
 
-    let players = init_players(bot_count, &mut global_deck);
-    let human = &mut players[0];
+    let mut dir = 1;
+    let mut players = init_players(bot_count, &mut global_deck);
 
-    let mut deck_display = String::new();
-    for card in human.deck {
-        deck_display.push_str(card);
+    let mut cur_idx = 0;
+    loop {
+        let player = &mut players[cur_idx];
+        if player.is_human {
+            println!(
+                "Your turn! Your deck contains {}\nWhich card do you play?",
+                get_deck_display(&player.deck)
+            );
+
+            let card = loop {
+                buf.clear();
+                io::stdin().read_line(&mut buf).unwrap();
+                if let Ok(card_num) = buf.trim().parse::<usize>() {
+                    if !(1..=player.deck.len()).contains(&card_num) {
+                        println!("Card not listed.");
+                        continue;
+                    }
+                    let card = &player.deck[card_num - 1];
+                    let top_discarded = &discarded[discarded.len() - 1];
+                    if top_discarded.accepts(&card) {
+                        break card;
+                    }
+                    println!("Card cannot be placed on a {top_discarded}.");
+                } else {
+                    println!("You must input a standalone integer. Try again:");
+                }
+            };
+
+            println!("Success!");
+        }
+        cur_idx += dir;
     }
-    println!("Your deck is {}");
 }
