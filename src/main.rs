@@ -1,5 +1,7 @@
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+use std::collections::VecDeque;
+use std::fmt;
 use std::io;
 
 #[derive(Clone, Copy, Debug)]
@@ -8,6 +10,21 @@ enum Color {
     Green,
     Blue,
     Yellow,
+}
+
+impl fmt::Display for Color {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Color::Red => "Red",
+                Color::Green => "Green",
+                Color::Blue => "Blue",
+                Color::Yellow => "Yellow",
+            }
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -63,6 +80,36 @@ enum Card {
     Wild(WildCard),
 }
 
+impl fmt::Display for Card {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Card::Wild(card) => write!(
+                f,
+                "{}",
+                match card.action {
+                    WildAction::ChangeColor => "Change Color",
+                    WildAction::Draw4 => "Draw 4",
+                }
+            ),
+            Card::Number(card) => {
+                write!(f, "{} {}", card.color, card.number)
+            }
+            Card::Action(card) => {
+                write!(
+                    f,
+                    "{} {}",
+                    card.color,
+                    match card.action {
+                        Action::Draw2 => "Draw 2",
+                        Action::Reverse => "Reverse",
+                        Action::Skip => "Skip",
+                    }
+                )
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Player {
     deck: Vec<Card>,
@@ -73,10 +120,11 @@ const COLORS: [Color; 4] = [Color::Red, Color::Green, Color::Blue, Color::Yellow
 const ACTIONS: [Action; 3] = [Action::Draw2, Action::Reverse, Action::Skip];
 const WILD_ACTIONS: [WildAction; 2] = [WildAction::ChangeColor, WildAction::Draw4];
 const MAX_BOTS: u8 = 9;
+const NUM_CARDS: usize = 108;
 
-fn transfer_cards(global_deck: &mut Vec<Card>, deck: &mut Vec<Card>, amount: u8) -> bool {
+fn transfer_cards(global_deck: &mut VecDeque<Card>, deck: &mut Vec<Card>, amount: u8) -> bool {
     for _ in 0..amount {
-        match global_deck.pop() {
+        match global_deck.pop_front() {
             Some(card) => {
                 deck.push(card);
             }
@@ -86,8 +134,8 @@ fn transfer_cards(global_deck: &mut Vec<Card>, deck: &mut Vec<Card>, amount: u8)
     true
 }
 
-fn main() {
-    let mut global_deck: Vec<Card> = Vec::new();
+fn gen_global_deck() -> VecDeque<Card> {
+    let mut global_deck = Vec::with_capacity(NUM_CARDS);
 
     for color in COLORS {
         // We add one 0 card.
@@ -114,6 +162,27 @@ fn main() {
     let mut rng = thread_rng();
     global_deck.shuffle(&mut rng);
 
+    VecDeque::from(global_deck)
+}
+
+fn init_players(bot_count: u8, global_deck: &mut VecDeque<Card>) -> Vec<Player> {
+    let mut players = Vec::new();
+
+    for i in 0..=bot_count {
+        let mut deck = Vec::new();
+        transfer_cards(global_deck, &mut deck, 7);
+        players.push(Player {
+            deck,
+            is_human: i == 0,
+        });
+    }
+
+    players
+}
+
+fn main() {
+    let mut global_deck = gen_global_deck();
+
     println!("Enter bot count:");
     let mut buf = String::new();
     let bot_count = loop {
@@ -126,30 +195,16 @@ fn main() {
         } else {
             println!("You must input a standalone integer. Try again:");
         }
+
         buf.clear();
     };
 
-    let mut players = Vec::new();
-    for i in 0..=bot_count {
-        let mut deck = Vec::new();
-        transfer_cards(&mut global_deck, &mut deck, 7);
-        players.push(Player {
-            deck,
-            is_human: i == 0,
-        });
-    }
+    let players = init_players(bot_count, &mut global_deck);
+    let human = &mut players[0];
 
-    for (i, player) in players.iter().enumerate() {
-        println!(
-            "The cards of player {}, {}, are {:?}",
-            i,
-            if player.is_human {
-                "the human"
-            } else {
-                "a bot"
-            },
-            player.deck
-        );
-        println!();
+    let mut deck_display = String::new();
+    for card in human.deck {
+        deck_display.push_str(card);
     }
+    println!("Your deck is {}");
 }
