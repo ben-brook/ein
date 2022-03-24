@@ -119,11 +119,10 @@ fn main() {
     let bot_count = loop {
         io::stdin().read_line(&mut buf).unwrap();
         if let Ok(count) = buf.trim().parse::<u8>() {
-            if count <= MAX_BOTS && count >= 1 {
+            if (1..=MAX_BOTS).contains(&count) {
                 break count;
-            } else {
-                println!("Bot count must be between 1 and {MAX_BOTS} inclusively. Try again:");
             }
+            println!("Bot count must be between 1 and {MAX_BOTS} inclusively. Try again:");
         } else {
             println!("You must input a standalone integer. Try again:");
         }
@@ -151,6 +150,6 @@ fn main() {
             },
             player.deck
         );
-        println!("");
+        println!();
     }
 }
