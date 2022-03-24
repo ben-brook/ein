@@ -196,7 +196,7 @@ fn init_players(bot_count: u8, global_deck: &mut VecDeque<Card>) -> Vec<Player> 
     players
 }
 
-fn get_deck_display(deck: &Vec<Card>) -> String {
+fn get_deck_display(deck: &[Card]) -> String {
     let mut deck_display = String::new();
 
     for (i, card) in deck.iter().enumerate() {
@@ -263,7 +263,7 @@ fn main() {
                     let card_idx = card_num - 1;
                     let card = &player.deck[card_idx];
                     let top_discarded = &discarded[discarded.len() - 1];
-                    if top_discarded.accepts(&card) {
+                    if top_discarded.accepts(card) {
                         break card_idx;
                     }
                     println!("Card cannot be placed on a {top_discarded}.");
