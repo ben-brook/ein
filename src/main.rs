@@ -245,13 +245,14 @@ fn main() {
     let mut cur_idx = 0;
     loop {
         let player = &mut players[cur_idx];
+        let card_idx;
         if player.is_human {
             println!(
                 "Your turn! Your deck contains {}\nWhich card do you play?",
                 get_deck_display(&player.deck)
             );
 
-            let card = loop {
+            card_idx = loop {
                 buf.clear();
                 io::stdin().read_line(&mut buf).unwrap();
                 if let Ok(card_num) = buf.trim().parse::<usize>() {
@@ -259,18 +260,18 @@ fn main() {
                         println!("Card not listed.");
                         continue;
                     }
-                    let card = &player.deck[card_num - 1];
+                    let card_idx = card_num - 1;
+                    let card = &player.deck[card_idx];
                     let top_discarded = &discarded[discarded.len() - 1];
                     if top_discarded.accepts(&card) {
-                        break card;
+                        break card_idx;
                     }
                     println!("Card cannot be placed on a {top_discarded}.");
                 } else {
                     println!("You must input a standalone integer. Try again:");
                 }
             };
-
-            println!("Success!");
+        } else {
         }
         cur_idx += dir;
     }
