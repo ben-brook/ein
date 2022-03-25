@@ -1,8 +1,10 @@
+use rand::prelude::ThreadRng;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use std::collections::VecDeque;
 use std::fmt;
 use std::io;
+use std::thread::Thread;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Color {
@@ -40,24 +42,25 @@ enum WildAction {
     Draw4,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct NumberCard {
     color: Color,
     number: u8,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct ActionCard {
     color: Color,
     action: Action,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct WildCard {
+    color: Option<Color>,
     action: WildAction,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum Card {
     Number(NumberCard),
     Action(ActionCard),
@@ -91,7 +94,17 @@ impl Card {
                 Card::Wild(_) => true,
             },
 
-            Card::Wild(_) => true,
+            Card::Wild(WildCard { color, action: _ }) => match other {
+                Card::Number(NumberCard {
+                    color: other_color,
+                    number: _,
+                })
+                | Card::Action(ActionCard {
+                    color: other_color,
+                    action: _,
+                }) => other_color == &color.unwrap(),
+                Card::Wild(_) => true,
+            },
         }
     }
 }
@@ -138,19 +151,44 @@ const WILD_ACTIONS: [WildAction; 2] = [WildAction::ChangeColor, WildAction::Draw
 const MAX_BOTS: u8 = 9;
 const NUM_CARDS: usize = 108;
 
-fn transfer_cards(global_deck: &mut VecDeque<Card>, deck: &mut Vec<Card>, amount: u8) -> bool {
-    for _ in 0..amount {
-        match global_deck.pop_front() {
-            Some(card) => {
-                deck.push(card);
+fn transfer_cards(
+    global_deck: &mut VecDeque<Card>,
+    deck: &mut Vec<Card>,
+    amount: u8,
+    disallows_wild: bool,
+    rng: &mut ThreadRng,
+) -> bool {
+    let mut has_transferred = true;
+    loop {
+        for _ in 0..amount {
+            match global_deck.pop_front() {
+                Some(card) => {
+                    if !disallows_wild {
+                        deck.push(card);
+                        continue;
+                    }
+                    if let Card::Wild(_) = card {
+                        let mut vec = Vec::from(global_deck.clone());
+                        vec.push(card);
+                        vec.shuffle(rng);
+                        *global_deck = VecDeque::from(vec);
+                        has_transferred = false;
+                        break;
+                    }
+                }
+                None => return false,
             }
-            None => return false,
         }
+        if has_transferred {
+            break;
+        }
+        has_transferred = true;
     }
+
     true
 }
 
-fn gen_global_deck() -> VecDeque<Card> {
+fn gen_global_deck(rng: &mut ThreadRng) -> VecDeque<Card> {
     let mut global_deck = Vec::with_capacity(NUM_CARDS);
 
     for color in COLORS {
@@ -171,22 +209,28 @@ fn gen_global_deck() -> VecDeque<Card> {
 
     for action in WILD_ACTIONS {
         for _ in 0..4 {
-            global_deck.push(Card::Wild(WildCard { action }));
+            global_deck.push(Card::Wild(WildCard {
+                action,
+                color: None,
+            }));
         }
     }
 
-    let mut rng = thread_rng();
-    global_deck.shuffle(&mut rng);
+    global_deck.shuffle(rng);
 
     VecDeque::from(global_deck)
 }
 
-fn init_players(bot_count: u8, global_deck: &mut VecDeque<Card>) -> Vec<Player> {
+fn init_players(
+    bot_count: u8,
+    global_deck: &mut VecDeque<Card>,
+    rng: &mut ThreadRng,
+) -> Vec<Player> {
     let mut players = Vec::new();
 
     for i in 0..=bot_count {
         let mut deck = Vec::new();
-        transfer_cards(global_deck, &mut deck, 7);
+        transfer_cards(global_deck, &mut deck, 7, false, rng);
         players.push(Player {
             deck,
             is_human: i == 0,
@@ -219,9 +263,10 @@ fn get_deck_display(deck: &[Card]) -> String {
 }
 
 fn main() {
-    let mut global_deck = gen_global_deck();
+    let mut rng = thread_rng();
+    let mut global_deck = gen_global_deck(&mut rng);
     let mut discarded = Vec::new();
-    transfer_cards(&mut global_deck, &mut discarded, 1);
+    transfer_cards(&mut global_deck, &mut discarded, 1, true, &mut rng);
 
     println!("Enter bot count:");
     let mut buf = String::new();
@@ -240,39 +285,76 @@ fn main() {
     };
 
     let mut dir = 1;
-    let mut players = init_players(bot_count, &mut global_deck);
+    let mut is_hot = true;
+    let mut players = init_players(bot_count, &mut global_deck, &mut rng);
 
     let mut cur_idx = 0;
     loop {
         let player = &mut players[cur_idx];
-        let card_idx;
-        if player.is_human {
-            println!(
-                "Your turn! Your deck contains {}\nWhich card do you play?",
-                get_deck_display(&player.deck)
-            );
-
-            card_idx = loop {
-                buf.clear();
-                io::stdin().read_line(&mut buf).unwrap();
-                if let Ok(card_num) = buf.trim().parse::<usize>() {
-                    if !(1..=player.deck.len()).contains(&card_num) {
-                        println!("Card not listed.");
-                        continue;
-                    }
-                    let card_idx = card_num - 1;
-                    let card = &player.deck[card_idx];
-                    let top_discarded = &discarded[discarded.len() - 1];
-                    if top_discarded.accepts(card) {
-                        break card_idx;
-                    }
-                    println!("Card cannot be placed on a {top_discarded}.");
-                } else {
-                    println!("You must input a standalone integer. Try again:");
+        let top_discarded = &discarded[discarded.len() - 1];
+        let is_special = match top_discarded {
+            Card::Action(ActionCard { color: _, action }) => match action {
+                Action::Draw2 => {
+                    transfer_cards(&mut global_deck, &mut player.deck, 2, false, &mut rng);
+                    println!(
+                        "You picked up two cards. Your new deck is:\n{}",
+                        get_deck_display(&player.deck)
+                    );
+                    if player.is_human {}
+                    true
                 }
-            };
-        } else {
+                Action::Skip => true,
+                Action::Reverse => false,
+            },
+            Card::Wild(WildCard { color: _, action }) => match action {
+                WildAction::Draw4 => {
+                    transfer_cards(&mut global_deck, &mut player.deck, 4, false, &mut rng);
+                    true
+                }
+                WildAction::ChangeColor => false,
+            },
+            Card::Number(_) => false,
+        };
+        if !(is_hot && is_special) {
+            let can_play = player
+                .deck
+                .iter()
+                .filter(|x| top_discarded.accepts(x))
+                .count()
+                == 0;
+
+            let card_idx;
+            if player.is_human {
+                println!(
+                    "Your turn! Your deck contains {}\nWhich card do you play?",
+                    get_deck_display(&player.deck)
+                );
+
+                card_idx = loop {
+                    buf.clear();
+                    io::stdin().read_line(&mut buf).unwrap();
+                    if let Ok(card_num) = buf.trim().parse::<usize>() {
+                        if !(1..=player.deck.len()).contains(&card_num) {
+                            println!("Card not listed.");
+                            continue;
+                        }
+                        let card_idx = card_num - 1;
+                        let card = &player.deck[card_idx];
+                        if top_discarded.accepts(card) {
+                            break card_idx;
+                        }
+                        println!("Card cannot be placed on a {top_discarded}.");
+                    } else {
+                        println!("You must input a standalone integer. Try again:");
+                    }
+                };
+            } else {
+            }
         }
+
         cur_idx += dir;
+        if !is_hot {
+            is_hot = true;
+        }
     }
 }
