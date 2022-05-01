@@ -157,35 +157,28 @@ fn transfer_cards(
     amount: u8,
     disallows_wild: bool,
     rng: &mut ThreadRng,
-) -> bool {
-    let mut has_transferred = true;
-    loop {
-        for _ in 0..amount {
-            match global_deck.pop_front() {
+) -> u8 {
+    let mut transferred = 0;
+    for _ in 0..amount {
+        loop {
+            match global_deck.front() {
                 Some(card) => {
-                    if !disallows_wild {
-                        deck.push(card);
-                        continue;
-                    }
-                    if let Card::Wild(_) = card {
+                    if disallows_wild && matches!(card, Card::Wild(_)) {
                         let mut vec = Vec::from(global_deck.clone());
-                        vec.push(card);
                         vec.shuffle(rng);
                         *global_deck = VecDeque::from(vec);
-                        has_transferred = false;
+                    } else {
+                        deck.push(global_deck.pop_front().unwrap());
+                        transferred += 1;
                         break;
                     }
                 }
-                None => return false,
+                None => return transferred,
             }
         }
-        if has_transferred {
-            break;
-        }
-        has_transferred = true;
     }
 
-    true
+    transferred
 }
 
 fn gen_global_deck(rng: &mut ThreadRng) -> VecDeque<Card> {
@@ -258,8 +251,6 @@ fn get_deck_display(deck: &[Card]) -> String {
     }
 
     deck_display
-        .trim_end_matches(|x| x == ' ' || x == ',')
-        .to_string()
 }
 
 fn main() {
@@ -292,43 +283,58 @@ fn main() {
     loop {
         let player = &mut players[cur_idx];
         let top_discarded = &discarded[discarded.len() - 1];
-        let is_special = match top_discarded {
-            Card::Action(ActionCard { color: _, action }) => match action {
-                Action::Draw2 => {
-                    transfer_cards(&mut global_deck, &mut player.deck, 2, false, &mut rng);
-                    println!(
-                        "You picked up two cards. Your new deck is:\n{}",
-                        get_deck_display(&player.deck)
-                    );
-                    if player.is_human {}
-                    true
-                }
-                Action::Skip => true,
-                Action::Reverse => false,
-            },
-            Card::Wild(WildCard { color: _, action }) => match action {
-                WildAction::Draw4 => {
-                    transfer_cards(&mut global_deck, &mut player.deck, 4, false, &mut rng);
-                    true
-                }
-                WildAction::ChangeColor => false,
-            },
-            Card::Number(_) => false,
-        };
-        if !(is_hot && is_special) {
-            let can_play = player
+        let mut did_play = false;
+
+        let is_blocking = is_hot
+            && match top_discarded {
+                Card::Action(ActionCard { color: _, action }) => match action {
+                    Action::Draw2 => {
+                        transfer_cards(&mut global_deck, &mut player.deck, 2, false, &mut rng);
+                        if player.is_human {
+                            println!(
+                                "You picked up two cards. Your new deck is:\n{}",
+                                get_deck_display(&player.deck)
+                            );
+                        }
+                        true
+                    }
+                    Action::Skip => true,
+                    Action::Reverse => false,
+                },
+                Card::Wild(WildCard { color: _, action }) => match action {
+                    WildAction::Draw4 => {
+                        transfer_cards(&mut global_deck, &mut player.deck, 4, false, &mut rng);
+                        if player.is_human {
+                            println!(
+                                "You picked up four cards. Your new deck is:\n{}",
+                                get_deck_display(&player.deck)
+                            );
+                        }
+                        true
+                    }
+                    WildAction::ChangeColor => false,
+                },
+                Card::Number(_) => false,
+            };
+
+        if !is_blocking {
+            // TODO: make sure to set did_play upon a play
+            // TODO: turn this into a deck with gaps of Nones to maintain
+            // indices
+            let playable_deck = player
                 .deck
                 .iter()
                 .filter(|x| top_discarded.accepts(x))
-                .count()
-                == 0;
+                .collect::<Vec<_>>();
 
             let card_idx;
             if player.is_human {
+                // TODO: remove this step when no cards are playable - just pick
+                // one up straight away
                 println!(
-                    "Your turn! Your deck contains {}\nWhich card do you play?",
-                    get_deck_display(&player.deck)
-                );
+                        "Your turn! Your deck contains {}\nWhich card do you play? Enter 'none' to pick up a card.",
+                        get_deck_display(&player.deck)
+                    );
 
                 card_idx = loop {
                     buf.clear();
@@ -341,20 +347,24 @@ fn main() {
                         let card_idx = card_num - 1;
                         let card = &player.deck[card_idx];
                         if top_discarded.accepts(card) {
-                            break card_idx;
+                            break Some(card_idx);
                         }
                         println!("Card cannot be placed on a {top_discarded}.");
+                    } else if buf.trim().to_lowercase() == "none" {
+                        break None;
                     } else {
-                        println!("You must input a standalone integer. Try again:");
+                        println!("You must input a standalone integer or 'none'. Try again:");
                     }
                 };
             } else {
+                // TODO: choose the first Some element and play it
+                let mut shuffled = playable_deck.clone();
+                shuffled.shuffle(&mut rng);
+                for card in shuffled {}
             }
         }
 
-        cur_idx += dir;
-        if !is_hot {
-            is_hot = true;
-        }
+        cur_idx = (cur_idx + dir) % players.len();
+        is_hot = did_play;
     }
 }
