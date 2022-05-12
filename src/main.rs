@@ -67,7 +67,7 @@ impl Card {
                 Card::Wild(_) => true,
             },
 
-            Card::Wild(action) => match other {
+            Card::Wild(_) => match other {
                 Card::Number {
                     color: other_color,
                     number: _,
