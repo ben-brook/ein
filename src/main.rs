@@ -140,18 +140,11 @@ fn transfer_cards(
     true
 }
 
-fn init_discard_pile(
-    discard_pile: &mut Vec<Card>,
-    draw_pile: &mut Vec<Card>,
-    rng: &mut ThreadRng,
-) -> Vec<Card> {
-    loop {
-        if matches!(draw_pile.last().unwrap(), Card::Wild(_)) {
-            draw_pile.shuffle(rng);
-        } else {
-            discard_pile.push(draw_pile.pop().unwrap());
-        }
+fn init_discard_pile(discard_pile: &mut Vec<Card>, draw_pile: &mut Vec<Card>, rng: &mut ThreadRng) {
+    while matches!(draw_pile.last().unwrap(), Card::Wild(_)) {
+        draw_pile.shuffle(rng);
     }
+    discard_pile.push(draw_pile.pop().unwrap());
 }
 
 fn init_players(
@@ -214,7 +207,7 @@ fn main() {
         &mut discard_pile,
         &mut rng,
     );
-    let mut discard_pile = init_discard_pile(&mut discard_pile, &mut draw_pile, &mut rng);
+    init_discard_pile(&mut discard_pile, &mut draw_pile, &mut rng);
 
     loop {
         match players[cur_idx].play(
