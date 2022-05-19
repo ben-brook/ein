@@ -42,43 +42,65 @@ enum Card {
 
 impl Card {
     fn accepts(&self, other: &Card, wild_color: Option<Color>) -> bool {
-        match self {
-            Card::Number { color, number } => match other {
-                Card::Number {
-                    color: other_color,
-                    number: other_number,
-                } => other_color == color || other_number == number,
-                Card::Action {
-                    color: other_color,
-                    action: _,
-                } => other_color == color,
-                Card::Wild(_) => true,
-            },
+        match [self, other] {
+            [Card::Number { color, number }, Card::Number {
+                color: other_color,
+                number: other_number,
+            }] => other_color == color || other_number == number,
 
-            Card::Action { color, action } => match other {
-                Card::Number {
-                    color: other_color,
-                    number: _,
-                } => other_color == color,
-                Card::Action {
-                    color: other_color,
-                    action: other_action,
-                } => other_color == color || other_action == action,
-                Card::Wild(_) => true,
-            },
+            [Card::Number { color, number: _ }, Card::Action {
+                color: other_color,
+                action: _,
+            }]
+            | [Card::Action {
+                color: other_color,
+                action: _,
+            }, Card::Number { color, number: _ }] => other_color == color,
 
-            Card::Wild(_) => match other {
-                Card::Number {
-                    color: other_color,
-                    number: _,
-                }
-                | Card::Action {
-                    color: other_color,
-                    action: _,
-                } => *other_color == wild_color.unwrap(),
-                Card::Wild(_) => true,
-            },
+            [_, Card::Wild(_)] => true,
+
+            [Card::Action { color, action }, Card::Action {
+                action: other_action,
+                color: other_color,
+            }] => other_color == color || other_action == action,
         }
+        // match self {
+        //     Card::Number { color, number } => match other {
+        //         Card::Number {
+        //             color: other_color,
+        //             number: other_number,
+        //         } => other_color == color || other_number == number,
+        //         Card::Action {
+        //             color: other_color,
+        //             action: _,
+        //         } => other_color == color,
+        //         Card::Wild(_) => true,
+        //     },
+
+        //     Card::Action { color, action } => match other {
+        //         Card::Number {
+        //             color: other_color,
+        //             number: _,
+        //         } => other_color == color,
+        //         Card::Action {
+        //             color: other_color,
+        //             action: other_action,
+        //         } => other_color == color || other_action == action,
+        //         Card::Wild(_) => true,
+        //     },
+
+        //     Card::Wild(_) => match other {
+        //         Card::Number {
+        //             color: other_color,
+        //             number: _,
+        //         }
+        //         | Card::Action {
+        //             color: other_color,
+        //             action: _,
+        //         } => *other_color == wild_color.unwrap(),
+        //         Card::Wild(_) => true,
+        //     },
+        // }
     }
 }
 
