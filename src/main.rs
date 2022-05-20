@@ -1,5 +1,8 @@
 #![warn(clippy::pedantic)]
 
+use core::time;
+use std::thread;
+
 use rand::{
     distributions::{Distribution, Standard},
     Rng,
@@ -34,6 +37,7 @@ enum PlayResult {
     Win,
     Place(Option<Color>),
     NoPlace,
+    Starvation,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq)]
@@ -116,18 +120,22 @@ fn transfer_cards(
                     break;
                 }
                 None => {
-                    if discard_pile.is_empty() {
+                    // Discard pile size should never be 0 since there'll always
+                    // be a top card.
+                    if discard_pile.len() == 1 {
                         // There are no more cards left to play with.
-                        return false;
+                        return true;
                     }
-                    discard_pile.shuffle(rng);
-                    draw_pile.swap_with_slice(discard_pile);
+                    for card in discard_pile.drain(..discard_pile.len() - 1) {
+                        draw_pile.push(card);
+                    }
+                    draw_pile.shuffle(rng);
                 }
             }
         }
     }
 
-    true
+    false
 }
 
 fn init_discard_pile(discard_pile: &mut Vec<Card>, draw_pile: &mut Vec<Card>, rng: &mut ThreadRng) {
@@ -155,7 +163,7 @@ fn init_players(
             rng,
         );
         if i == 0 {
-            players.push(Box::new(Human { deck }));
+            // players.push(Box::new(Human { deck }));
         } else {
             players.push(Box::new(Bot { deck }));
         }
@@ -210,17 +218,19 @@ fn start() {
         &mut rng,
     );
     init_discard_pile(&mut discard_pile, &mut draw_pile, &mut rng);
+    let player_count = i8::try_from(players.len()).unwrap();
 
-    loop {
-        match players[cur_idx].play(
+    let play_result = loop {
+        let result = players[cur_idx].play(
             &mut draw_pile,
             &mut discard_pile,
             &mut dir,
             is_hot,
             wild_color,
+            cur_idx,
             &mut rng,
-        ) {
-            PlayResult::Win => break,
+        );
+        match result {
             PlayResult::Place(new_wild_color) => {
                 is_hot = true;
                 wild_color = new_wild_color;
@@ -228,10 +238,23 @@ fn start() {
             PlayResult::NoPlace => {
                 is_hot = false;
             }
+            _ => break result,
         }
 
-        cur_idx = (cur_idx + usize::try_from(i8::try_from(players.len()).unwrap() + dir).unwrap())
-            % players.len();
+        cur_idx = (cur_idx + usize::try_from(player_count + dir).unwrap()) % players.len();
+    };
+
+    if matches!(play_result, PlayResult::Win) {
+        println!(
+            "Game over: {}!",
+            if cur_idx == 0 {
+                String::from("you win")
+            } else {
+                format!("Bot {cur_idx} wins")
+            }
+        );
+    } else {
+        println!("Game over: ran out of cards to play with");
     }
 }
 
@@ -240,7 +263,6 @@ fn main() {
 }
 
 trait Player {
-    fn get_deck(&mut self) -> &mut Vec<Card>;
     fn play(
         &mut self,
         draw_pile: &mut Vec<Card>,
@@ -248,6 +270,7 @@ trait Player {
         dir: &mut i8,
         is_hot: bool,
         wild_color: Option<Color>,
+        player_idx: usize,
         rng: &mut ThreadRng,
     ) -> PlayResult;
 }
@@ -256,10 +279,6 @@ struct Human {
     deck: Vec<Card>,
 }
 impl Player for Human {
-    fn get_deck(&mut self) -> &mut Vec<Card> {
-        &mut self.deck
-    }
-
     fn play(
         &mut self,
         draw_pile: &mut Vec<Card>,
@@ -267,6 +286,7 @@ impl Player for Human {
         dir: &mut i8,
         is_hot: bool,
         wild_color: Option<Color>,
+        player_idx: usize,
         rng: &mut ThreadRng,
     ) -> PlayResult {
         PlayResult::NoPlace
@@ -277,10 +297,6 @@ struct Bot {
     deck: Vec<Card>,
 }
 impl Player for Bot {
-    fn get_deck(&mut self) -> &mut Vec<Card> {
-        &mut self.deck
-    }
-
     fn play(
         &mut self,
         draw_pile: &mut Vec<Card>,
@@ -288,21 +304,56 @@ impl Player for Bot {
         dir: &mut i8,
         is_hot: bool,
         wild_color: Option<Color>,
+        player_idx: usize,
         rng: &mut ThreadRng,
     ) -> PlayResult {
-        let top = discard_pile.last().unwrap();
+        if is_hot {
+            // Deal with consequential cards from the last move.
+            match discard_pile[discard_pile.len() - 1] {
+                Card::Action { action, .. } => match action {
+                    Action::Skip => return PlayResult::NoPlace,
+                    Action::Draw2 => {
+                        if transfer_cards(draw_pile, discard_pile, &mut self.deck, 2, rng) {
+                            return PlayResult::Starvation;
+                        };
+                        announce_bot_move(format!("Bot {player_idx} draws two cards."));
+                        return PlayResult::NoPlace;
+                    }
+                    _ => {}
+                },
 
-        if let Card::Action { action, .. } = top {
-            if matches!(action, Action::Skip) {
-                return PlayResult::NoPlace;
+                Card::Wild(wild_action) => {
+                    if matches!(wild_action, WildAction::Draw4) {
+                        if transfer_cards(draw_pile, discard_pile, &mut self.deck, 4, rng) {
+                            return PlayResult::Starvation;
+                        };
+                        announce_bot_move(format!("Bot {player_idx} draws four cards."));
+                        return PlayResult::NoPlace;
+                    }
+                }
+
+                _ => {}
             }
         }
 
-        let mut chosen_idx = None;
-
+        // Find a card to play.
+        let mut possible_idxs = Vec::new();
         for (idx, card) in self.deck.iter().enumerate() {
-            if top.accepts(card, wild_color) {
-                chosen_idx = Some(idx);
+            if discard_pile[discard_pile.len() - 1].accepts(card, wild_color) {
+                possible_idxs.push(idx);
+            }
+        }
+        let mut chosen_idx = possible_idxs.choose(rng).copied();
+
+        if chosen_idx == None {
+            // Pick a card from the pile.
+            if transfer_cards(draw_pile, discard_pile, &mut self.deck, 1, rng) {
+                return PlayResult::Starvation;
+            }
+            announce_bot_move(format!("Bot {player_idx} draws a card."));
+            if discard_pile[discard_pile.len() - 1].accepts(self.deck.last().unwrap(), wild_color) {
+                // We can play it.
+                chosen_idx = Some(self.deck.len() - 1);
             }
         }
 
@@ -310,21 +361,36 @@ impl Player for Bot {
             discard_pile.push(self.deck.swap_remove(idx));
 
             let mut new_wild_color = None;
-            match discard_pile.last().unwrap() {
+            let played_card = discard_pile.last().unwrap();
+            announce_bot_move(format!("Bot {player_idx} plays a {played_card:?}."));
+            match played_card {
                 Card::Action { action, .. } => {
                     if matches!(action, Action::Reverse) {
                         *dir = -*dir;
                     }
                 }
                 Card::Wild(_) => {
-                    new_wild_color = rng.gen();
+                    let new_wild_color_contents = rng.gen();
+                    new_wild_color = Some(new_wild_color_contents);
+                    announce_bot_move(format!(
+                        "Bot {player_idx} chooses {new_wild_color_contents:?} as the new colour."
+                    ));
                 }
                 _ => {}
             }
 
-            PlayResult::Place(new_wild_color)
+            if self.deck.len() == 0 {
+                PlayResult::Win
+            } else {
+                PlayResult::Place(new_wild_color)
+            }
         } else {
             PlayResult::NoPlace
         }
     }
+}
+
+fn announce_bot_move(announcement: String) {
+    println!("{announcement}");
+    thread::sleep(time::Duration::from_millis(500));
 }
