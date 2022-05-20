@@ -373,8 +373,10 @@ fn start() {
     let player_count = i8::try_from(players.len()).unwrap();
 
     let play_result = loop {
-        let result =
-            players[cur_idx].play(&mut cards, &mut dir, is_hot, wild_color, cur_idx, &mut rng);
+        let result = players
+            .get_mut(cur_idx)
+            .unwrap()
+            .play(&mut cards, &mut dir, is_hot, wild_color, cur_idx, &mut rng);
         match result {
             PlayResult::Place(new_wild_color) => {
                 is_hot = true;
