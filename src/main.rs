@@ -46,61 +46,28 @@ impl Card {
             [Card::Number { color, number }, Card::Number {
                 color: other_color,
                 number: other_number,
-            }] => other_color == color || other_number == number,
+            }] => color == other_color || number == other_number,
 
             [Card::Number { color, number: _ }, Card::Action {
                 color: other_color,
                 action: _,
             }]
-            | [Card::Action {
+            | [Card::Action { color, action: _ }, Card::Number {
                 color: other_color,
-                action: _,
-            }, Card::Number { color, number: _ }] => other_color == color,
-
-            [_, Card::Wild(_)] => true,
+                number: _,
+            }] => color == other_color,
 
             [Card::Action { color, action }, Card::Action {
                 action: other_action,
                 color: other_color,
             }] => other_color == color || other_action == action,
+
+            [_, Card::Wild(_)] => true,
+
+            [Card::Wild(_), Card::Number { number: _, color } | Card::Action { action: _, color }] => {
+                *color == wild_color.unwrap()
+            }
         }
-        // match self {
-        //     Card::Number { color, number } => match other {
-        //         Card::Number {
-        //             color: other_color,
-        //             number: other_number,
-        //         } => other_color == color || other_number == number,
-        //         Card::Action {
-        //             color: other_color,
-        //             action: _,
-        //         } => other_color == color,
-        //         Card::Wild(_) => true,
-        //     },
-
-        //     Card::Action { color, action } => match other {
-        //         Card::Number {
-        //             color: other_color,
-        //             number: _,
-        //         } => other_color == color,
-        //         Card::Action {
-        //             color: other_color,
-        //             action: other_action,
-        //         } => other_color == color || other_action == action,
-        //         Card::Wild(_) => true,
-        //     },
-
-        //     Card::Wild(_) => match other {
-        //         Card::Number {
-        //             color: other_color,
-        //             number: _,
-        //         }
-        //         | Card::Action {
-        //             color: other_color,
-        //             action: _,
-        //         } => *other_color == wild_color.unwrap(),
-        //         Card::Wild(_) => true,
-        //     },
-        // }
     }
 }
 
@@ -214,44 +181,51 @@ fn ask_bot_count(buf: &mut String) -> u8 {
 }
 
 fn main() {
-    let mut rng = rand::thread_rng();
-    let mut draw_pile = gen_draw_pile(&mut rng);
-    let mut discard_pile = Vec::new();
-    let mut dir = 1; // Inverted by Reverse cards
-    let mut is_hot = true; // Was the top card from the last player?
-    let mut wild_color = None;
-    let mut cur_idx = 0;
+    let card1 = Card::Action {
+        action: Action::Draw2,
+        color: Color::Blue,
+    };
+    let card2 = Card::Wild(WildAction::ChangeColor);
+    println!("{}", card2.accepts(&card1, Some(Color::Red)));
 
-    let mut buf = String::new();
-    let mut players = init_players(
-        ask_bot_count(&mut buf),
-        &mut draw_pile,
-        &mut discard_pile,
-        &mut rng,
-    );
-    init_discard_pile(&mut discard_pile, &mut draw_pile, &mut rng);
+    // let mut rng = rand::thread_rng();
+    // let mut draw_pile = gen_draw_pile(&mut rng);
+    // let mut discard_pile = Vec::new();
+    // let mut dir = 1; // Inverted by Reverse cards
+    // let mut is_hot = true; // Was the top card from the last player?
+    // let mut wild_color = None;
+    // let mut cur_idx = 0;
 
-    loop {
-        match players[cur_idx].play(
-            &mut draw_pile,
-            &mut discard_pile,
-            &mut dir,
-            is_hot,
-            wild_color,
-        ) {
-            PlayResult::Win => break,
-            PlayResult::Place(new_wild_color) => {
-                is_hot = true;
-                wild_color = new_wild_color;
-            }
-            PlayResult::NoPlace => {
-                is_hot = false;
-            }
-        }
+    // let mut buf = String::new();
+    // let mut players = init_players(
+    //     ask_bot_count(&mut buf),
+    //     &mut draw_pile,
+    //     &mut discard_pile,
+    //     &mut rng,
+    // );
+    // init_discard_pile(&mut discard_pile, &mut draw_pile, &mut rng);
 
-        cur_idx = (cur_idx + usize::try_from(i8::try_from(players.len()).unwrap() + dir).unwrap())
-            % players.len();
-    }
+    // loop {
+    //     match players[cur_idx].play(
+    //         &mut draw_pile,
+    //         &mut discard_pile,
+    //         &mut dir,
+    //         is_hot,
+    //         wild_color,
+    //     ) {
+    //         PlayResult::Win => break,
+    //         PlayResult::Place(new_wild_color) => {
+    //             is_hot = true;
+    //             wild_color = new_wild_color;
+    //         }
+    //         PlayResult::NoPlace => {
+    //             is_hot = false;
+    //         }
+    //     }
+
+    //     cur_idx = (cur_idx + usize::try_from(i8::try_from(players.len()).unwrap() + dir).unwrap())
+    //         % players.len();
+    // }
 }
 
 trait Player {
