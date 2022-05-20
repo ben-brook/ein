@@ -1,7 +1,6 @@
 #![warn(clippy::pedantic)]
 
 use rand::{prelude::ThreadRng, seq::SliceRandom};
-use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum Color {
@@ -48,19 +47,17 @@ impl Card {
                 number: other_number,
             }] => color == other_color || number == other_number,
 
-            [Card::Number { color, number: _ }, Card::Action {
-                color: other_color,
-                action: _,
+            [Card::Number { color, .. }, Card::Action {
+                color: other_color, ..
             }]
-            | [Card::Action { color, action: _ }, Card::Number {
-                color: other_color,
-                number: _,
+            | [Card::Action { color, .. }, Card::Number {
+                color: other_color, ..
             }] => color == other_color,
 
             [Card::Action { color, action }, Card::Action {
                 action: other_action,
                 color: other_color,
-            }] => other_color == color || other_action == action,
+            }] => color == other_color || action == other_action,
 
             [_, Card::Wild(_)] => true,
 
@@ -103,7 +100,7 @@ fn gen_draw_pile(rng: &mut ThreadRng) -> Vec<Card> {
 fn transfer_cards(
     draw_pile: &mut Vec<Card>,
     discard_pile: &mut Vec<Card>,
-    deck: &mut HashSet<Card>,
+    deck: &mut Vec<Card>,
     amount: u8,
     rng: &mut ThreadRng,
 ) -> bool {
@@ -111,7 +108,7 @@ fn transfer_cards(
         loop {
             match draw_pile.pop() {
                 Some(card) => {
-                    deck.insert(card);
+                    deck.push(card);
                     break;
                 }
                 None => {
@@ -145,7 +142,7 @@ fn init_players(
     let mut players: Vec<Box<dyn Player>> = Vec::new();
 
     for i in 0..=bot_count {
-        let mut deck = HashSet::new();
+        let mut deck = Vec::new();
         transfer_cards(
             draw_pile,
             discard_pile,
@@ -226,6 +223,7 @@ fn main() {
 }
 
 trait Player {
+    fn get_deck(&mut self) -> &mut Vec<Card>;
     fn play(
         &mut self,
         draw_pile: &mut Vec<Card>,
@@ -237,9 +235,13 @@ trait Player {
 }
 
 struct Human {
-    deck: HashSet<Card>,
+    deck: Vec<Card>,
 }
 impl Player for Human {
+    fn get_deck(&mut self) -> &mut Vec<Card> {
+        &mut self.deck
+    }
+
     fn play(
         &mut self,
         draw_pile: &mut Vec<Card>,
@@ -253,9 +255,13 @@ impl Player for Human {
 }
 
 struct Bot {
-    deck: HashSet<Card>,
+    deck: Vec<Card>,
 }
 impl Player for Bot {
+    fn get_deck(&mut self) -> &mut Vec<Card> {
+        &mut self.deck
+    }
+
     fn play(
         &mut self,
         draw_pile: &mut Vec<Card>,
@@ -274,7 +280,14 @@ impl Player for Bot {
         }
 
         if let Some(idx) = chosen_idx {
-            place(idx, self, discard_pile, dir);
+            // place(idx, self, discard_pile, dir);
+            discard_pile.push(self.deck.swap_remove(idx));
+            match discard_pile.last().unwrap() {
+                Card::Action { action, color } => {}
+                Card::Wild(wild_action) => {}
+                Card::Number { number, color } => {}
+            }
+
             PlayResult::Place(None)
         } else {
             PlayResult::NoPlace
@@ -282,4 +295,4 @@ impl Player for Bot {
     }
 }
 
-fn place(card_idx: usize, player: &mut impl Player, discard_pile: &mut [Card], dir: &mut i8) {}
+fn place(card_idx: usize, player: &mut impl Player, discard_pile: &mut Vec<Card>, dir: &mut i8) {}
