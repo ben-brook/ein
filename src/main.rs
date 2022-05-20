@@ -1,5 +1,9 @@
 #![warn(clippy::pedantic)]
 
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng,
+};
 use rand::{prelude::ThreadRng, seq::SliceRandom};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -177,6 +181,18 @@ fn ask_bot_count(buf: &mut String) -> u8 {
     }
 }
 
+// https://stackoverflow.com/a/48491021
+impl Distribution<Color> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Color {
+        match rng.gen_range(0..=3) {
+            0 => Color::Red,
+            1 => Color::Blue,
+            2 => Color::Yellow,
+            _ => Color::Green, // 3
+        }
+    }
+}
+
 fn start() {
     let mut rng = rand::thread_rng();
     let mut draw_pile = gen_draw_pile(&mut rng);
@@ -202,6 +218,7 @@ fn start() {
             &mut dir,
             is_hot,
             wild_color,
+            &mut rng,
         ) {
             PlayResult::Win => break,
             PlayResult::Place(new_wild_color) => {
@@ -231,6 +248,7 @@ trait Player {
         dir: &mut i8,
         is_hot: bool,
         wild_color: Option<Color>,
+        rng: &mut ThreadRng,
     ) -> PlayResult;
 }
 
@@ -249,6 +267,7 @@ impl Player for Human {
         dir: &mut i8,
         is_hot: bool,
         wild_color: Option<Color>,
+        rng: &mut ThreadRng,
     ) -> PlayResult {
         PlayResult::NoPlace
     }
@@ -269,8 +288,16 @@ impl Player for Bot {
         dir: &mut i8,
         is_hot: bool,
         wild_color: Option<Color>,
+        rng: &mut ThreadRng,
     ) -> PlayResult {
         let top = discard_pile.last().unwrap();
+
+        if let Card::Action { action, .. } = top {
+            if matches!(action, Action::Skip) {
+                return PlayResult::NoPlace;
+            }
+        }
+
         let mut chosen_idx = None;
 
         for (idx, card) in self.deck.iter().enumerate() {
@@ -280,19 +307,24 @@ impl Player for Bot {
         }
 
         if let Some(idx) = chosen_idx {
-            // place(idx, self, discard_pile, dir);
             discard_pile.push(self.deck.swap_remove(idx));
+
+            let mut new_wild_color = None;
             match discard_pile.last().unwrap() {
-                Card::Action { action, color } => {}
-                Card::Wild(wild_action) => {}
-                Card::Number { number, color } => {}
+                Card::Action { action, .. } => {
+                    if matches!(action, Action::Reverse) {
+                        *dir = -*dir;
+                    }
+                }
+                Card::Wild(_) => {
+                    new_wild_color = rng.gen();
+                }
+                _ => {}
             }
 
-            PlayResult::Place(None)
+            PlayResult::Place(new_wild_color)
         } else {
             PlayResult::NoPlace
         }
     }
 }
-
-fn place(card_idx: usize, player: &mut impl Player, discard_pile: &mut Vec<Card>, dir: &mut i8) {}
