@@ -180,52 +180,49 @@ fn ask_bot_count(buf: &mut String) -> u8 {
     }
 }
 
+fn start() {
+    let mut rng = rand::thread_rng();
+    let mut draw_pile = gen_draw_pile(&mut rng);
+    let mut discard_pile = Vec::new();
+    let mut dir = 1; // Inverted by Reverse cards
+    let mut is_hot = true; // Was the top card from the last player?
+    let mut wild_color = None;
+    let mut cur_idx = 0;
+
+    let mut buf = String::new();
+    let mut players = init_players(
+        ask_bot_count(&mut buf),
+        &mut draw_pile,
+        &mut discard_pile,
+        &mut rng,
+    );
+    init_discard_pile(&mut discard_pile, &mut draw_pile, &mut rng);
+
+    loop {
+        match players[cur_idx].play(
+            &mut draw_pile,
+            &mut discard_pile,
+            &mut dir,
+            is_hot,
+            wild_color,
+        ) {
+            PlayResult::Win => break,
+            PlayResult::Place(new_wild_color) => {
+                is_hot = true;
+                wild_color = new_wild_color;
+            }
+            PlayResult::NoPlace => {
+                is_hot = false;
+            }
+        }
+
+        cur_idx = (cur_idx + usize::try_from(i8::try_from(players.len()).unwrap() + dir).unwrap())
+            % players.len();
+    }
+}
+
 fn main() {
-    let card1 = Card::Action {
-        action: Action::Draw2,
-        color: Color::Blue,
-    };
-    let card2 = Card::Wild(WildAction::ChangeColor);
-    println!("{}", card2.accepts(&card1, Some(Color::Red)));
-
-    // let mut rng = rand::thread_rng();
-    // let mut draw_pile = gen_draw_pile(&mut rng);
-    // let mut discard_pile = Vec::new();
-    // let mut dir = 1; // Inverted by Reverse cards
-    // let mut is_hot = true; // Was the top card from the last player?
-    // let mut wild_color = None;
-    // let mut cur_idx = 0;
-
-    // let mut buf = String::new();
-    // let mut players = init_players(
-    //     ask_bot_count(&mut buf),
-    //     &mut draw_pile,
-    //     &mut discard_pile,
-    //     &mut rng,
-    // );
-    // init_discard_pile(&mut discard_pile, &mut draw_pile, &mut rng);
-
-    // loop {
-    //     match players[cur_idx].play(
-    //         &mut draw_pile,
-    //         &mut discard_pile,
-    //         &mut dir,
-    //         is_hot,
-    //         wild_color,
-    //     ) {
-    //         PlayResult::Win => break,
-    //         PlayResult::Place(new_wild_color) => {
-    //             is_hot = true;
-    //             wild_color = new_wild_color;
-    //         }
-    //         PlayResult::NoPlace => {
-    //             is_hot = false;
-    //         }
-    //     }
-
-    //     cur_idx = (cur_idx + usize::try_from(i8::try_from(players.len()).unwrap() + dir).unwrap())
-    //         % players.len();
-    // }
+    start();
 }
 
 trait Player {
