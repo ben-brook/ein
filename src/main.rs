@@ -394,11 +394,10 @@ fn start() {
     if matches!(play_result, PlayResult::Win) {
         println!(
             "Game over: {}!",
-            if cur_idx == 0 {
-                String::from("you win")
-            } else {
-                format!("Bot {cur_idx} wins")
-            }
+            // if cur_idx == 0 {
+            //     String::from("you win")
+            // } else {
+            format!("Bot {cur_idx} wins") // }
         );
     } else {
         println!("Game over: ran out of cards to play with");
