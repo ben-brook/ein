@@ -1,3 +1,3 @@
 # ein
 
-A small work-in-progress card game to help me learn Rust. Please feel free to file an issue or pull request if you think I'm doing something badly or in a non-Rusty way! I would appreciate the feedback :)
+Work-in-progress card game based on Uno to help me learn Rust -- I finished this to the extent that you can watch bots play a full game, but you can't as of yet play yourself.
